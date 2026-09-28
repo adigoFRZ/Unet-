@@ -26,6 +26,15 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
+sys.path.insert(0, str(PROJECT_ROOT / "tests"))
+from _local_fixtures import legacy_training_cache_usable  # noqa: E402
+
+#: The legacy 160/40 experiment split and the cache built over it are local
+#: artifacts -- neither is published. `cache/baseline_v1` existing is not enough:
+#: after `reproduce.py prepare` it exists but holds the subject-clean cohort
+#: (161/38), so these tests must skip rather than run against the wrong cases.
+LEGACY_FIXTURE_READY = legacy_training_cache_usable()
+LEGACY_FIXTURE_REASON = "legacy experiment split and its cache are not both present"
 
 from data import crop_spec as cs  # noqa: E402
 
@@ -61,7 +70,8 @@ COMBOS: dict[str, list[str]] = {
     "qsm_nm": ["QSM", "NM"],
 }
 
-needs_cache = pytest.mark.skipif(not CACHE_DIR.is_dir(), reason="cache not built")
+needs_cache = pytest.mark.skipif(not LEGACY_FIXTURE_READY,
+                                  reason=LEGACY_FIXTURE_REASON)
 
 
 def _dataset(modalities=None, split: str = "val") -> SegmentationDataset:

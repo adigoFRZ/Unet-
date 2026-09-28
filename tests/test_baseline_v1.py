@@ -20,6 +20,15 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
+sys.path.insert(0, str(PROJECT_ROOT / "tests"))
+from _local_fixtures import legacy_training_cache_usable  # noqa: E402
+
+#: The legacy 160/40 experiment split and the cache built over it are local
+#: artifacts -- neither is published. `cache/baseline_v1` existing is not enough:
+#: after `reproduce.py prepare` it exists but holds the subject-clean cohort
+#: (161/38), so these tests must skip rather than run against the wrong cases.
+LEGACY_FIXTURE_READY = legacy_training_cache_usable()
+LEGACY_FIXTURE_REASON = "legacy experiment split and its cache are not both present"
 
 from data import crop_spec as cs  # noqa: E402
 
@@ -115,7 +124,7 @@ def test_spacing_order_matches_axis_order() -> None:
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.skipif(not CACHE_DIR.is_dir(), reason="cache not built")
+@pytest.mark.skipif(not LEGACY_FIXTURE_READY, reason=LEGACY_FIXTURE_REASON)
 def test_dataset_item_shapes_and_dtypes() -> None:
     dataset = SegmentationDataset(PROJECT_ROOT, "train")
     sample = dataset[0]
@@ -127,7 +136,7 @@ def test_dataset_item_shapes_and_dtypes() -> None:
     assert isinstance(sample["case_id"], str)
 
 
-@pytest.mark.skipif(not CACHE_DIR.is_dir(), reason="cache not built")
+@pytest.mark.skipif(not LEGACY_FIXTURE_READY, reason=LEGACY_FIXTURE_REASON)
 def test_dataset_labels_in_range_and_all_classes_present() -> None:
     dataset = SegmentationDataset(PROJECT_ROOT, "train")
     for index in (0, len(dataset) // 2, len(dataset) - 1):
@@ -141,7 +150,7 @@ def test_dataset_labels_in_range_and_all_classes_present() -> None:
             )
 
 
-@pytest.mark.skipif(not CACHE_DIR.is_dir(), reason="cache not built")
+@pytest.mark.skipif(not LEGACY_FIXTURE_READY, reason=LEGACY_FIXTURE_REASON)
 def test_dataset_rejects_reserved_splits() -> None:
     """internal_test / challenge_test must not be loadable at this stage."""
     for split in ("internal_test", "challenge_test"):
@@ -149,7 +158,7 @@ def test_dataset_rejects_reserved_splits() -> None:
             SegmentationDataset(PROJECT_ROOT, split)
 
 
-@pytest.mark.skipif(not CACHE_DIR.is_dir(), reason="cache not built")
+@pytest.mark.skipif(not LEGACY_FIXTURE_READY, reason=LEGACY_FIXTURE_REASON)
 def test_dataset_images_are_finite() -> None:
     dataset = SegmentationDataset(PROJECT_ROOT, "val")
     for index in range(0, len(dataset), max(1, len(dataset) // 5)):
@@ -366,7 +375,7 @@ def test_backward_produces_nonzero_gradients() -> None:
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.skipif(not CACHE_DIR.is_dir(), reason="cache not built")
+@pytest.mark.skipif(not LEGACY_FIXTURE_READY, reason=LEGACY_FIXTURE_REASON)
 def test_dataset_order_is_stable() -> None:
     first = SegmentationDataset(PROJECT_ROOT, "train").case_ids
     second = SegmentationDataset(PROJECT_ROOT, "train").case_ids
@@ -421,8 +430,8 @@ def test_config_paths_resolve_to_existing_locations(tmp_path) -> None:
 
 def test_dataset_root_ignores_cwd(tmp_path, monkeypatch) -> None:
     """SegmentationDataset must resolve its cache/manifest dirs off the root."""
-    if not CACHE_DIR.is_dir():
-        pytest.skip("cache not built")
+    if not LEGACY_FIXTURE_READY:
+        pytest.skip(LEGACY_FIXTURE_REASON)
     monkeypatch.chdir(tmp_path)
     dataset = SegmentationDataset(PROJECT_ROOT, "train")
     assert dataset.cache_dir == PROJECT_ROOT.resolve() / "cache" / "baseline_v1"
@@ -606,7 +615,7 @@ def test_hd95_uses_millimetre_spacing() -> None:
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.skipif(not CACHE_DIR.is_dir(), reason="cache not built")
+@pytest.mark.skipif(not LEGACY_FIXTURE_READY, reason=LEGACY_FIXTURE_REASON)
 def test_final_evaluation_writes_per_case_and_summary(tmp_path) -> None:
     """The final pass must produce the per-case CSV and summary JSON with HD95."""
     import json

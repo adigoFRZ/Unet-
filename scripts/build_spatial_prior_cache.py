@@ -4,25 +4,37 @@
 Computes, for each foreground class, the per-voxel count of development-train
 cases whose ground truth marks that voxel:
 
-    S_k(v) = sum over the 160 development-train cases of 1[Y_i(v) = k]
+    S_k(v) = sum over the N development-train cases of 1[Y_i(v) = k]
 
 and stores it as one ``(3, D, H, W)`` integer volume plus a metadata sidecar.
-The full 160 maps are *not* stored -- a training case's leave-one-out prior is
+The full N maps are *not* stored -- a training case's leave-one-out prior is
 obtained by subtracting its own mask at load time (see ``data.spatial_prior``).
+
+N is not a constant of this script: it is the number of cases in the train
+manifest it is given, and the published subject-clean manifest
+(``manifests/subject_clean_v1/train.csv``) holds **161**. The old 160-case
+campaign is a different cohort, and a cache built from it must never be used --
+which is why the cache records its own case list and is refused whenever that
+list does not match the manifest exactly.
 
 Naming: this is a **training-set occupancy map** / **empirical spatial prior**.
 It is NOT an anatomical atlas and NOT a registered probability atlas -- no
 cross-subject registration exists in this project (see the Experiment E preflight
-audit). The 160 cases share a voxel grid, not a common anatomical space.
+audit). The cases share a voxel grid, not a common anatomical space.
 
 Data-source rules, enforced here rather than left to the caller:
   * only development-train labels are read;
   * validation / internal_test / challenge_test labels are never opened;
-  * the train manifest must contain exactly 160 cases and every label must exist.
+  * the train manifest must contain exactly ``--expect-n-train`` cases (by
+    default, however many the manifest holds) and every label must exist;
+  * after building, the cache's own recorded case list is compared against the
+    manifest case set -- a mismatch is a hard failure, not a warning.
 
 Usage
 -----
-    python scripts/build_spatial_prior_cache.py --root .
+    python scripts/build_spatial_prior_cache.py --root \\
+        --manifest-dir manifests/subject_clean_v1 \\
+        --out-dir cache/spatial_prior_v1_subject_clean --expect-n-train 161
     python scripts/build_spatial_prior_cache.py --root . --verify-only
 """
 
@@ -44,7 +56,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from data import crop_spec as cs  # noqa: E402
 from data.spatial_prior import (  # noqa: E402
-    N_TRAIN,
     OCCUPANCY_CHANNEL_NAMES,
     OCCUPANCY_CLASSES,
     OccupancyPrior,
@@ -66,9 +77,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                         default=Path("manifests/experiment"))
     parser.add_argument("--out-dir", type=Path,
                         default=Path("cache/spatial_prior_v1"))
-    parser.add_argument("--expect-n-train", type=int, default=N_TRAIN,
+    parser.add_argument("--expect-n-train", type=int, default=None,
                         help="Refuse to build unless the train split has this many "
-                             "cases (default 160).")
+                             "cases. Default: however many the manifest holds "
+                             "(no hard-coded cohort size).")
     parser.add_argument("--verify-only", action="store_true",
                         help="Re-check an existing cache without rewriting it.")
     parser.add_argument("--verbose", "-v", action="store_true")
@@ -171,13 +183,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not manifest_path.is_file():
         LOGGER.error("missing train manifest %s", manifest_path)
         return 2
-    frame = pd.read_csv(manifest_path)
+    frame = pd.read_csv(manifest_path, encoding="utf-8-sig")
     case_ids = sorted(str(c) for c in frame["case_id"])
 
     # ---- hard preconditions ------------------------------------------------ #
-    if len(case_ids) != args.expect_n_train:
+    # The expected cohort size is an argument, or -- with no argument -- whatever
+    # the given manifest holds. It is deliberately NOT a module constant: the
+    # legacy campaign had 160 development-train cases and the published
+    # subject-clean split has 161, so a hard-coded size would either refuse a
+    # correct build or, far worse, accept a prior built over the wrong cohort.
+    expect_n = args.expect_n_train if args.expect_n_train is not None else len(case_ids)
+    LOGGER.info("Cohort size: manifest has %d case(s); expecting %d",
+                len(case_ids), expect_n)
+    if len(case_ids) != expect_n:
         LOGGER.error("train manifest has %d cases, expected %d; refusing to build "
-                     "a prior over the wrong cohort", len(case_ids), args.expect_n_train)
+                     "a prior over the wrong cohort", len(case_ids), expect_n)
         return 2
     if len(set(case_ids)) != len(case_ids):
         LOGGER.error("train manifest contains duplicate case ids")
@@ -209,6 +229,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         np.save(sums_path, sums)
         LOGGER.info("Wrote %s (%d bytes)", sums_path, sums_path.stat().st_size)
 
+    # ---- explicit case-set verification (both modes) ----------------------- #
+    recorded = sorted(str(c) for c in prior.case_ids)
+    if recorded != case_ids:
+        missing = sorted(set(case_ids) - set(recorded))
+        extra = sorted(set(recorded) - set(case_ids))
+        LOGGER.error("the cache's case set does not match the train manifest "
+                     "(%d recorded vs %d expected; missing %s; unexpected %s); "
+                     "refusing to report success",
+                     len(recorded), len(case_ids), missing[:5], extra[:5])
+        return 2
+    if int(sums.max()) > prior.n_train or sums.shape[1:] != cs.CROP_SHAPE_DHW:
+        LOGGER.error("cache contents inconsistent with its case list")
+        return 2
+
     # ---- sanity (read-only, always run) ------------------------------------ #
     sanity = occupancy_sanity(prior, label_dir)
 
@@ -239,6 +273,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         meta_path.write_text(json.dumps(metadata, indent=2, ensure_ascii=False),
                              encoding="utf-8")
         LOGGER.info("Wrote %s", meta_path)
+
+        # Round trip: re-read the cache that was just written, with the manifest's
+        # case list as the expectation. This is a check on the artifact, not on
+        # the in-memory object -- what matters is what a training run will load,
+        # and a cache left over from the 160-case campaign fails right here.
+        reloaded = OccupancyPrior.load(out_dir, expected_case_ids=case_ids)
+        if reloaded.n_train != len(case_ids):
+            LOGGER.error("cache on disk records %d case(s), manifest has %d",
+                         reloaded.n_train, len(case_ids))
+            return 2
+        LOGGER.info("Case-set check on the written cache: %d case(s) == manifest",
+                    reloaded.n_train)
 
     # ---- console ----------------------------------------------------------- #
     print()

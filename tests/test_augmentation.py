@@ -18,6 +18,15 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
+sys.path.insert(0, str(PROJECT_ROOT / "tests"))
+from _local_fixtures import legacy_training_cache_usable  # noqa: E402
+
+#: The legacy 160/40 experiment split and the cache built over it are local
+#: artifacts -- neither is published. `cache/baseline_v1` existing is not enough:
+#: after `reproduce.py prepare` it exists but holds the subject-clean cohort
+#: (161/38), so these tests must skip rather than run against the wrong cases.
+LEGACY_FIXTURE_READY = legacy_training_cache_usable()
+LEGACY_FIXTURE_REASON = "legacy experiment split and its cache are not both present"
 
 from data import crop_spec as cs  # noqa: E402
 from data.augmentation import (  # noqa: E402
@@ -161,7 +170,7 @@ def test_label_stays_discrete() -> None:
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.skipif(not CACHE_DIR.is_dir(), reason="cache not built")
+@pytest.mark.skipif(not LEGACY_FIXTURE_READY, reason=LEGACY_FIXTURE_REASON)
 def test_validation_split_refuses_augmentation() -> None:
     from data.segmentation_dataset import SegmentationDataset
 
@@ -169,7 +178,7 @@ def test_validation_split_refuses_augmentation() -> None:
         SegmentationDataset(PROJECT_ROOT, "val", augment=True)
 
 
-@pytest.mark.skipif(not CACHE_DIR.is_dir(), reason="cache not built")
+@pytest.mark.skipif(not LEGACY_FIXTURE_READY, reason=LEGACY_FIXTURE_REASON)
 def test_validation_samples_are_deterministic() -> None:
     """Re-reading the same val sample must give byte-identical tensors."""
     from data.segmentation_dataset import SegmentationDataset
@@ -287,7 +296,7 @@ def test_intensity_augmentation_preserves_zero_background() -> None:
             )
 
 
-@pytest.mark.skipif(not CACHE_DIR.is_dir(), reason="cache not built")
+@pytest.mark.skipif(not LEGACY_FIXTURE_READY, reason=LEGACY_FIXTURE_REASON)
 def test_augmented_train_samples_are_valid_on_real_data() -> None:
     from data.segmentation_dataset import SegmentationDataset
 

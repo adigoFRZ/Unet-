@@ -128,7 +128,18 @@ def test_historical_comparator_still_resolves_to_seed123() -> None:
 
 @requires_frozen
 def test_historical_constant_was_seed123() -> None:
-    """The superseded constant named the same comparator, so nothing moved."""
+    """The superseded constant named the same comparator, so nothing moved.
+
+    Both halves matter: the amended evaluator must no longer carry the constant,
+    and a revision that *did* carry it must name the same comparator the frozen
+    pre-registration names. Checking only the second would pass even if the
+    hard-coding came back; checking only the first would prove nothing.
+    """
+    current = (PROJECT_ROOT / "scripts" / "evaluate_subject_clean_holdout.py").read_text(
+        encoding="utf-8")
+    assert 'PRIMARY_COMPARATOR = "seed123"' not in current, \
+        "the hard-coded comparator is back in the evaluator"
+
     old_source = _historical_evaluator_source()
     if old_source is None:
         pytest.skip("no git history available to recover the superseded constant")
@@ -136,20 +147,39 @@ def test_historical_constant_was_seed123() -> None:
 
 
 def _historical_evaluator_source() -> str | None:
-    """The pre-amendment evaluator, from git. None when unavailable."""
+    """A revision of the evaluator that still carries the superseded constant.
+
+    Walks the file's own history newest-first instead of assuming ``HEAD`` holds
+    the pre-amendment version: once the amended evaluator is committed, HEAD no
+    longer contains the constant and a HEAD-only lookup stops being evidence.
+    Returns ``None`` when no revision in this clone has it (shallow clone, or a
+    history that never contained it).
+    """
     import subprocess
 
+    relative = "scripts/evaluate_subject_clean_holdout.py"
+    needle = 'PRIMARY_COMPARATOR = "seed123"'
     try:
-        out = subprocess.run(
-            ["git", "show", "HEAD:scripts/evaluate_subject_clean_holdout.py"],
-            cwd=str(PROJECT_ROOT), capture_output=True, timeout=60)
+        log = subprocess.run(["git", "log", "--format=%H", "--", relative],
+                             cwd=str(PROJECT_ROOT), capture_output=True, timeout=60)
+        if log.returncode != 0:
+            return None
+        commits = log.stdout.decode("utf-8", errors="replace").split()
+        for commit in commits:
+            out = subprocess.run(["git", "show", f"{commit}:{relative}"],
+                                 cwd=str(PROJECT_ROOT), capture_output=True,
+                                 timeout=60)
+            if out.returncode != 0:
+                continue
+            # decode explicitly: the source is UTF-8 but the console default on
+            # Windows is a legacy code page, and letting subprocess guess breaks
+            # on the CJK text
+            text = out.stdout.decode("utf-8", errors="replace")
+            if needle in text:
+                return text
     except (OSError, subprocess.SubprocessError):
         return None
-    if out.returncode != 0:
-        return None
-    # decode explicitly: the source is UTF-8 but the console default on Windows
-    # is a legacy code page, and letting subprocess guess breaks on the CJK text
-    return out.stdout.decode("utf-8", errors="replace")
+    return None
 
 
 @requires_frozen

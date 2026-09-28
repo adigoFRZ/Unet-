@@ -32,6 +32,15 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
+sys.path.insert(0, str(PROJECT_ROOT / "tests"))
+from _local_fixtures import legacy_training_cache_usable  # noqa: E402
+
+#: The legacy 160/40 experiment split and the cache built over it are local
+#: artifacts -- neither is published. `cache/baseline_v1` existing is not enough:
+#: after `reproduce.py prepare` it exists but holds the subject-clean cohort
+#: (161/38), so these tests must skip rather than run against the wrong cases.
+LEGACY_FIXTURE_READY = legacy_training_cache_usable()
+LEGACY_FIXTURE_REASON = "legacy experiment split and its cache are not both present"
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 from data import crop_spec as cs  # noqa: E402
@@ -47,7 +56,11 @@ IMAGE_DIR = PROJECT_ROOT / "processed" / "images"
 FREEZE_RECORD = (PROJECT_ROOT / "results" / "experiments" / "baseline_deep_ensemble"
                  / "FREEZE_RECORD.json")
 
-needs_frozen = pytest.mark.skipif(not FROZEN_CACHE.is_dir(), reason="frozen cache absent")
+# The equivalence tests rebuild the legacy cache's own cases, so they need
+# both that cache and the legacy split it was built over.
+needs_frozen = pytest.mark.skipif(
+    not (FROZEN_CACHE.is_dir() and LEGACY_FIXTURE_READY),
+    reason="frozen cache / legacy experiment split absent")
 needs_holdout = pytest.mark.skipif(not HOLDOUT_CACHE.is_dir(),
                                    reason="holdout cache not built")
 # The split manifests name real participant cases and are excluded from the

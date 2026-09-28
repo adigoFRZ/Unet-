@@ -20,22 +20,26 @@ silently destroy the absolute position information the channel exists to carry.
 voxel and per class, the fraction of development-train cases whose ground truth
 marks it:
 
-    S_k(v)  = sum_i M_i,k(v)          over the 160 development-train cases
-    P_k(v)  = S_k(v) / 160            for validation
-    P_k^{-i}(v) = (S_k(v) - M_i,k(v)) / 159   for training case i
+    S_k(v)  = sum_i M_i,k(v)          over the N development-train cases
+    P_k(v)  = S_k(v) / N              for validation
+    P_k^{-i}(v) = (S_k(v) - M_i,k(v)) / (N - 1)   for training case i
+
+with N the size of the development-train cohort the cache was built from --
+161 for the published subject-clean split. N is read from the cache's own case
+list, never from a constant.
 
 Naming, deliberately: this is an **empirical spatial prior** / **training-set
 occupancy map**, NOT an anatomical atlas and NOT a registered probability atlas.
-There is no cross-subject registration anywhere in this project -- the 160 cases
+There is no cross-subject registration anywhere in this project -- the cases
 share a voxel grid (identical shape, spacing and zero-translation affine), not a
 common anatomical space. "Atlas" would imply a standardised space that was never
 established.
 
-Why leave-one-out is mandatory, not an optimisation: feeding ``S_k/160`` to the
+Why leave-one-out is mandatory, not an optimisation: feeding ``S_k/N`` to the
 model while training on case i puts case i's *own* ground truth into its input.
 That is a self-referential leak -- the model could reduce the loss by reading the
 answer rather than by segmenting. Training therefore subtracts the current case's
-own mask; validation uses the full 160-case map, which is leak-free because no
+own mask; validation uses the full N-case map, which is leak-free because no
 validation case contributed to it.
 
 Boundary: every prior channel is appended AFTER the image channels, never
@@ -101,8 +105,16 @@ OCCUPANCY_CHANNEL_NAMES: tuple[str, ...] = ("P_STN", "P_SN", "P_RN")
 #: class order of the occupancy cache's class axis
 OCCUPANCY_CLASSES: tuple[int, ...] = cs.FOREGROUND_CLASSES
 
-#: number of development-train cases the occupancy prior is defined over
-N_TRAIN = 160
+#: Size of the published subject-clean development-train cohort, i.e. the number
+#: of cases the occupancy prior is *normally* defined over (161).
+#:
+#: Documentation only. Nothing derives a cohort size from this constant: the
+#: prior carries its own case list and ``OccupancyPrior`` always divides by
+#: ``self.n_train``, and the builder takes the expected size from its manifest
+#: (``--expect-n-train``), never from here. The legacy pre-subject-clean campaign
+#: used 160 cases; a prior built over that cohort is a different prior and is
+#: refused when its recorded case set does not match the manifest.
+N_TRAIN = 161
 
 #: the split the occupancy prior may be built from, and the only one it uses
 TRAIN_SPLIT = "train"
@@ -186,7 +198,7 @@ class OccupancyPrior:
     """Class-wise voxel occupancy counts over the development-train cases.
 
     Holds only the per-class *sum* ``S_k`` (3, D, H, W) plus the identity of the
-    cases that produced it -- never 160 full maps. A training case's
+    cases that produced it -- never N full maps. A training case's
     leave-one-out map is obtained by subtracting its own mask at load time, which
     costs one comparison and keeps the cache at ~176 KB.
     """
@@ -332,7 +344,7 @@ class SpatialPriorDataset(Dataset):
 
     ``split`` selects the occupancy semantics and is deliberately explicit: the
     train split gets leave-one-out maps, everything else gets the fixed
-    160-case map. A leakage-aware wrapper should not have to guess which it is.
+    N-case map. A leakage-aware wrapper should not have to guess which it is.
     """
 
     def __init__(self, base: Dataset, mode: str, *, split: str,
@@ -431,7 +443,7 @@ def build_spatial_prior(
 
     Returns ``(occupancy_or_None, mode)``. The cache is always validated against
     the **development-train manifest**, whatever split is being built: the
-    occupancy map is defined over the 160 training cases, so a validation loader
+    occupancy map is defined over the development-train cases, so a validation loader
     must still be using a cache built from exactly those cases. Checking against
     the split actually requested would let a val-built (leaking) cache pass.
     """

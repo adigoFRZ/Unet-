@@ -15,11 +15,23 @@
 ```bash
 python scripts/reproduce.py smoke      # 无数据，一条命令跑通全链路
 python scripts/reproduce.py prepare --data-root <PDCADxFoundation 路径>
+python scripts/reproduce.py preflight  # 21 个 run 的输入与 cache 是否齐备
 python scripts/reproduce.py train      # 21 个正式 run；registry 自动建立
-python scripts/reproduce.py summarize  # 汇总验证结果并写出冻结记录（需 --yes）
+python scripts/reproduce.py summarize --yes   # 汇总验证结果并写出冻结记录
+python scripts/reproduce.py evaluate --data-root <PDCADxFoundation 路径>
 ```
 
 所有子进程都用 `sys.executable` 启动，Windows / Linux / macOS 以及任意虚拟环境均可运行。
+
+- `prepare` 会构建 **21 个 run 需要的全部缓存**（baseline 训练缓存、`C_boundary` 的
+  STN 符号距离图、`E_e2_occupancy` / `E_e3_both` 的 subject-clean occupancy 先验），
+  然后自动跑 preflight；只有全部通过才输出 `PREPARE = PASS`。
+- occupancy 先验**严格**基于 `manifests/subject_clean_v1/train.csv` 的 161 例构建，
+  并把病例清单写入 `occupancy_meta.json`。preflight 对照该清单，旧 160 例缓存会被
+  拒绝，**不会退回旧缓存**。
+- `evaluate` 是**独立复现评估**入口：用组员自己训练的成员 checkpoint，在冻结的
+  100 例 `internal_test` 上评估，结果写入 `results/reproduction_eval_v1/`。
+  它拒绝写入作者的任何命名空间，也拒绝把 `internal_test` 说成新鲜未见测试集。
 
 ### 历史结果 vs 当前代码（重要）
 
@@ -74,13 +86,13 @@ python scripts/guard_subject_clean_holdout.py --dry-run           # 含“能否
 | `make_synthetic_data.py` | 生成合成团块数据，用于无数据时端到端验证流程（**非医学数据、非结果**） |
 | `prepare_labels.py` | `QSM_mask` → 0/1/2/3（STN/SN/RN）标签，写入 `processed/labels/` |
 | `normalize_images.py` | T1/QSM/NM 前景内归一化，写入 `processed/images/` |
-| `reproduce.py` | **统一复现入口**：`smoke` / `prepare` / `train` / `summarize` |
+| `reproduce.py` | **统一复现入口**：`smoke` / `prepare` / `preflight` / `train` / `summarize` / `evaluate` |
 | `check_public_manifests.py` | 公开 manifest 的数量、subject overlap 与敏感性信息扫描（提交前必跑） |
 | `build_manifests.py` | 生成 `manifests/{train,val,test}.csv`（官方 200/100/200 划分） |
 | `build_experiment_split.py` | 由官方划分派生开发划分 `manifests/experiment/`（160/40） |
 | `build_baseline_cache.py` | 固定 crop 张量缓存 `cache/baseline_v1/`（训练与验证共用） |
-| `build_boundary_cache.py` | 实验 C 的 STN 符号距离图缓存 |
-| `build_spatial_prior_cache.py` | 实验 E 的训练集 occupancy 先验缓存 |
+| `build_boundary_cache.py` | 实验 C 的 STN 符号距离图缓存（`--manifest-dir manifests/subject_clean_v1`） |
+| `build_spatial_prior_cache.py` | 实验 E 的训练集 occupancy 先验缓存。队列大小来自**给定的 manifest**（`--expect-n-train` 显式传 161），不依赖任何硬编码默认值；建好后会把缓存里的病例清单与 manifest 逐条对照 |
 | `build_holdout_image_cache.py` | 留出集评估用的**只读图像**缓存（结构上不读 GT） |
 
 ## 训练
@@ -89,11 +101,11 @@ python scripts/guard_subject_clean_holdout.py --dry-run           # 含“能否
 |---|---|
 | `run_tier2_subject_clean.py` | **根部运行**。按 `TIER2_RUN_REGISTRY.csv` 顺序驱动论文的 21 个正式 run（子进程调用 `src/training/train_baseline.py`） |
 
-单个 run 的入口是 `src/training/train_baseline.py` 本身：
+单个 run 的入口是 `src/training/train_baseline.py` 本身。**config 已经决定了 run 的
+名字与输出目录，不要再传 `--run-id`**（与 config 里的目录名重复会被新版代码拒绝）：
 
 ```bash
-$PY src/training/train_baseline.py \
-    --config configs/subject_clean_v1/baseline_v1.yaml --run-id baseline_v1
+$PY src/training/train_baseline.py --config configs/subject_clean_v1/baseline_v1.yaml
 ```
 
 ## 验证与评估
@@ -103,8 +115,22 @@ $PY src/training/train_baseline.py \
 | `aggregate_clean_val_results.py` | **根部运行**。汇总 21 个 run 的验证集结果、按**验证集前景 macro Dice** 选出对照 seed123、冻结集成、写留出集预注册 |
 | `evaluate_deep_ensemble.py` | 集成配方与冻结 seed 注册表（`RUNS` / `SEEDS` 被下游 import）；`prediction = argmax(mean_i softmax(logits_i))`。逐病例 STN 表是**可选**的，用 `--highlight-case-ids` / `--highlight-case-ids-file` 指定，默认不输出——源码里不含任何病例编号 |
 | `evaluate_frozen_holdout.py` | 盲推理 → 指标 → 配对 bootstrap / 符号翻转置换的完整机制（被下游 import）。统计量本身来自 `src/evaluation/statistics.py`，这里保留的是**预注册常数**并逐个显式传入 |
-| `evaluate_subject_clean_holdout.py` | **根部运行**。留出集**一次性**评估；**已执行完毕，不要重跑** |
+| `evaluate_subject_clean_holdout.py` | **根部运行**。作者侧留出集**一次性**评估；**已执行完毕，不要重跑**。它读仓库内 `processed/labels`，因为作者那一轮的数据就放在仓库内——**组员复现请用下面的 `evaluate_reproduction.py`** |
+| `evaluate_reproduction.py` | **组员侧的独立复现评估**（`reproduce.py evaluate` 调用的就是它）。GT 与影像一律从 `--data-root` 定位，不假定仓库内路径；结果写入 `results/reproduction_eval_v1/`，拒绝写入作者命名空间 |
 | `guard_subject_clean_holdout.py` | **根部运行**。防止误重跑留出集评估的保护入口，`--self-test` 可自检 |
+
+`evaluate_reproduction.py` 的固定内容（不可配置、不可关闭）：
+
+- comparator **从本地冻结的预注册记录读取**，必须是已冻结成员且标记 `locked`；
+  不硬编码、也不在本脚本里选择；
+- ensemble 配方沿用冻结实现：`softmax(logits, dim=1)` → 成员概率图取算术平均 →
+  一次 `argmax`（由 `evaluate_frozen_holdout.run_blind_inference` 执行）；
+- 指标与配对统计沿用冻结实现，且统计常数必须与预注册记录一致，不一致直接拒绝；
+- `internal_test` 图像张量用**与训练缓存相同**的管线构建，并先与训练缓存**逐位
+  比对**通过后才开始推理；
+- `internal_test` 病例集不得与 `train` / `val` / `challenge_test` 重叠；
+- 报告里明确写：这不是作者的历史评估，`internal_test` 也**不是**新鲜未见测试集，
+  可主张的只有权重层面的独立性。
 
 ## 分析与复算
 
@@ -125,7 +151,9 @@ $PY src/training/train_baseline.py \
 Linux/macOS 上是 `.venv/bin/python`）。下面是分步版本，`reproduce.py` 只是把它们串起来。
 
 ```bash
-# 单元测试
+# 单元测试（缺数据/缓存的用例自动跳过；`prepare` 之后仍会跳过的那些，
+# 是因为它们需要**未随仓库公开**的本地产物：旧的 manifests/experiment/ 划分
+# 或历史 checkpoint。判定逻辑见 tests/_local_fixtures.py）
 python -m pytest tests -q
 
 # 1) 无数据快速验证（等价于 python scripts/reproduce.py smoke）
@@ -145,6 +173,22 @@ python scripts/build_baseline_cache.py --root <DATA_ROOT> \
     --out-dir cache/baseline_v1 \
     --image-dir <DATA_ROOT>/processed/images \
     --label-dir <DATA_ROOT>/processed/labels
+# 实验 C 的边界监督
+python scripts/build_boundary_cache.py --root . \
+    --manifest-dir manifests/subject_clean_v1 \
+    --label-dir cache/baseline_v1/labels \
+    --out-dir cache/boundary_v1/stn_signed_distance --splits train,val
+# 实验 E 的 occupancy 先验（161 例，来自冻结划分）
+python scripts/build_spatial_prior_cache.py --root . \
+    --manifest-dir manifests/subject_clean_v1 \
+    --label-dir cache/baseline_v1/labels \
+    --out-dir cache/spatial_prior_v1_subject_clean --expect-n-train 161
+
+# 3) 开工前检查（等价于 python scripts/reproduce.py preflight）
+python scripts/reproduce.py preflight
+
+# 4) 独立复现评估（等价于 python scripts/reproduce.py evaluate --data-root <DATA_ROOT>）
+python scripts/evaluate_reproduction.py --data-root <DATA_ROOT>
 ```
 
 > 正式实验**不再需要** `build_experiment_split.py`：论文用的划分已经冻结在
