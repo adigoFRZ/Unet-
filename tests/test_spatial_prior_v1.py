@@ -21,7 +21,7 @@ label arguments and must come out identical. For the train split the same call
 must differ -- otherwise the previous assertion would pass trivially for a wrapper
 that ignores labels everywhere.
 
-Run with:  ./.venv/Scripts/python.exe -m pytest tests/test_spatial_prior_v1.py -v
+Run with:  python -m pytest tests/test_spatial_prior_v1.py -v
 """
 
 from __future__ import annotations

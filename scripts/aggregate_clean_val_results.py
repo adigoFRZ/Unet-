@@ -20,9 +20,20 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 
 ROOT = Path(".").resolve()
 RERUN = ROOT / "results/subject_clean_rerun"
-RES = ROOT / "results/experiments_subject_clean_v1"
-CKPT = ROOT / "checkpoints/subject_clean_v1"
 FAIL: list[str] = []
+
+
+def run_output_dirs(config_rel: str) -> tuple[Path, Path]:
+    """Where a run wrote, read from its own config.
+
+    The trainer writes to whatever the config says and the driver follows the
+    same file, so the aggregator must too. Assuming a fixed parent directory
+    here is what would let the three drift apart.
+    """
+    import yaml
+
+    raw = yaml.safe_load((ROOT / config_rel).read_text(encoding="utf-8")) or {}
+    return ROOT / str(raw["checkpoint_dir"]), ROOT / str(raw["results_dir"])
 
 
 def sha256_of(p: Path) -> str | None:
@@ -78,7 +89,12 @@ def main() -> int:
     rows = []
     for _, r in reg.iterrows():
         rid = r.run_id
-        vp = RES / rid / "val_per_case_best.csv"
+        try:
+            CKPT, RES = run_output_dirs(r.clean_config)
+        except (KeyError, FileNotFoundError) as exc:
+            FAIL.append(f"{rid}: cannot read its config ({exc})")
+            continue
+        vp = RES / "val_per_case_best.csv"
         if not vp.is_file():
             FAIL.append(f"{rid}: 缺 val_per_case_best.csv")
             continue
@@ -86,13 +102,13 @@ def main() -> int:
         if len(df) != 38:
             FAIL.append(f"{rid}: val n={len(df)} != 38")
         m = metrics(df)
-        s = json.loads(sorted((RES / rid).glob("training_summary*.json"))[0]
+        s = json.loads(sorted(RES.glob("training_summary*.json"))[0]
                        .read_text(encoding="utf-8"))
         if s.get("selection_metric") != "validation macro foreground Dice (STN/SN/RN mean)":
             FAIL.append(f"{rid}: selection_metric 异常")
         if s.get("halted"):
             FAIL.append(f"{rid}: halted={s.get('halted')}")
-        ck = CKPT / rid / "run_best.pt"
+        ck = CKPT / "run_best.pt"
         rows.append({
             "run_id": rid, "experiment_family": r.experiment_family, "seed": r.seed,
             "best_epoch": s.get("best_epoch"), "epochs_run": s.get("epochs_run"),

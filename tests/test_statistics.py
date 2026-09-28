@@ -12,7 +12,7 @@ pin exact values and cross-check the t-test against ``scipy`` directly.
 analysis, not tuning knobs. If a default drifts, every future run silently
 becomes a different experiment.
 
-Run with:  ./.venv/Scripts/python.exe -m pytest tests/test_statistics.py -v
+Run with:  python -m pytest tests/test_statistics.py -v
 """
 
 from __future__ import annotations

@@ -17,7 +17,7 @@ The remaining tests guard the two parts of the loss that must NOT have changed:
 the SN/RN soft Dice and the CE term, both compared bitwise against the frozen
 Baseline v1 implementation.
 
-Run with:  ./.venv/Scripts/python.exe -m pytest tests/test_stn_tversky_v1.py -v
+Run with:  python -m pytest tests/test_stn_tversky_v1.py -v
 """
 
 from __future__ import annotations

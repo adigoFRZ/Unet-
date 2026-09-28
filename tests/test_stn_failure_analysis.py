@@ -12,7 +12,7 @@ internally consistent and stayed inside its data boundary:
 * provenance claims in the summary are true, and the frozen Experiment F
   artifacts are untouched by the analysis.
 
-Run with:  ./.venv/Scripts/python.exe -m pytest tests/test_stn_failure_analysis.py -v
+Run with:  python -m pytest tests/test_stn_failure_analysis.py -v
 """
 
 from __future__ import annotations

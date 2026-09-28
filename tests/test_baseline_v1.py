@@ -6,7 +6,7 @@ spatially scrambled data -- no exception, no warning, just bad results. So the
 transform is pinned down explicitly, including a test that would FAIL if the
 transform were accidentally a flip instead of a pure permutation.
 
-Run with:  ./.venv/Scripts/python.exe -m pytest tests -v
+Run with:  python -m pytest tests -v
 """
 
 from __future__ import annotations

@@ -17,7 +17,7 @@ monkeypatched to raise if it is ever handed a path containing "label" or "mask",
 and the pipeline is then run for real. A future edit that starts reading GT fails
 the test rather than silently contaminating the result.
 
-Run with:  ./.venv/Scripts/python.exe -m pytest tests/test_holdout_image_cache.py -v
+Run with:  python -m pytest tests/test_holdout_image_cache.py -v
 """
 
 from __future__ import annotations

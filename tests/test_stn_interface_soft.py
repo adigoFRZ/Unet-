@@ -21,7 +21,7 @@ The loss is checked for the two properties that make it interpretable: the hard
 path must be the baseline's own criterion (bit-identical, not a reimplementation),
 and the soft path must reduce to the hard path when the target is one-hot.
 
-Run with:  ./.venv/Scripts/python.exe -m pytest tests/test_stn_interface_soft.py -v
+Run with:  python -m pytest tests/test_stn_interface_soft.py -v
 """
 
 from __future__ import annotations

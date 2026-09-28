@@ -46,7 +46,6 @@ OUT = ROOT / "results/subject_clean_holdout"
 HOLDOUT_IMG = ROOT / "cache/holdout_frozen_v1/images"
 LABELS = ROOT / "processed/labels"
 MANIFEST = ROOT / "manifests/subject_clean_v1/internal_test.csv"
-PRIMARY_COMPARATOR = "seed123"
 
 
 def sha256_file(p: Path) -> str:
@@ -57,6 +56,55 @@ def sha256_file(p: Path) -> str:
     return h.hexdigest()
 
 
+def resolve_comparator(pre: dict, freeze: dict) -> str:
+    """Read the comparator that was LOCKED at pre-registration time.
+
+    The comparator is not a constant of this script. It is chosen once on the
+    development validation split, written into
+    SUBJECT_CLEAN_HOLDOUT_PREREGISTRATION.json, and read back here. Anything
+    that could let the choice follow the holdout result is refused:
+
+    * the block must exist and be marked ``locked``;
+    * it must be one of the frozen ensemble members;
+    * its checkpoint path and SHA256 must match that member's frozen record,
+      so the comparator cannot be swapped after the fact;
+    * the pre-registration must be timestamped before the holdout was opened.
+
+    The historical run's comparator (seed123) therefore stays seed123 without
+    being hard-coded -- it is read from the record that fixed it.
+    """
+    block = pre.get("primary_comparator")
+    if not isinstance(block, dict) or not block.get("id"):
+        raise SystemExit(
+            "error: SUBJECT_CLEAN_HOLDOUT_PREREGISTRATION.json has no "
+            "primary_comparator.id.\n"
+            "       The comparator must be chosen on the validation split and "
+            "frozen BEFORE the holdout is opened.\n"
+            "       Refusing to guess or to pick one now."
+        )
+    if not block.get("locked", False):
+        raise SystemExit(
+            "error: primary_comparator is not marked locked in the "
+            "pre-registration; refusing to evaluate against it."
+        )
+
+    comparator = str(block["id"])
+    frozen = {f"seed{m['seed']}": m for m in freeze["members"]}
+    if comparator not in frozen:
+        raise SystemExit(
+            f"error: pre-registration names comparator {comparator!r}, which is "
+            f"not a frozen ensemble member (members: {sorted(frozen)})."
+        )
+    member = frozen[comparator]
+    if block.get("checkpoint") and block["checkpoint"] != member["checkpoint_path"]:
+        raise SystemExit(
+            f"error: comparator checkpoint in the pre-registration "
+            f"({block['checkpoint']}) does not match the frozen member "
+            f"({member['checkpoint_path']})."
+        )
+    return comparator
+
+
 def main() -> int:
     t0 = time.perf_counter()
     OUT.mkdir(parents=True, exist_ok=True)
@@ -65,12 +113,36 @@ def main() -> int:
     pre = json.loads((RERUN / "SUBJECT_CLEAN_HOLDOUT_PREREGISTRATION.json").read_text(encoding="utf-8"))
     members = freeze["members"]
     seeds = [f"seed{m['seed']}" for m in members]
-    print(f"members: {seeds}   comparator: {PRIMARY_COMPARATOR}")
+    primary_comparator = resolve_comparator(pre, freeze)
+    print(f"members: {seeds}")
+    print(f"comparator: {primary_comparator} "
+          f"(read from the frozen pre-registration, not hard-coded)")
 
     manifest_sha = sha256_file(MANIFEST)
     assert manifest_sha == pre["dataset_identity"]["manifest_sha256"], "manifest 与预注册不一致"
     case_ids = [str(c) for c in pd.read_csv(MANIFEST)["case_id"]]
     assert len(case_ids) == 100
+
+    # The pre-registration must predate this evaluation. Regenerating it after
+    # seeing a holdout result would be exactly the "pick the comparator once the
+    # numbers are in" failure this whole record exists to prevent.
+    if not pre.get("written_before_any_internal_test_access", False):
+        raise SystemExit(
+            "error: the pre-registration does not declare "
+            "written_before_any_internal_test_access=True; refusing to proceed."
+        )
+    pre_ts = str(pre.get("timestamp_utc", ""))
+    if pre_ts and OUT.exists() and (OUT / "HOLDOUT_PRIMARY_ENDPOINT.json").is_file():
+        prior = json.loads(
+            (OUT / "HOLDOUT_PRIMARY_ENDPOINT.json").read_text(encoding="utf-8"))
+        if prior.get("comparison") not in (None, f"ensemble vs {primary_comparator}"):
+            raise SystemExit(
+                "error: a previous holdout result in this directory used a "
+                f"different comparator ({prior['comparison']!r}) than the "
+                f"current pre-registration ({primary_comparator!r}).\n"
+                "       The comparator may not be changed after the holdout "
+                "has been evaluated."
+            )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"device: {device}")
@@ -116,14 +188,14 @@ def main() -> int:
 
     # ---- aggregates ----
     agg = {name: EFH.aggregate(per_case, name) for name in ["ensemble"] + seeds}
-    comp = agg[PRIMARY_COMPARATOR]
+    comp = agg[primary_comparator]
 
     # 直接使用官方 aggregate 的 macro_foreground_dice，避免任何定义分叉
     def macro(member):
         return float(agg[member]["macro_foreground_dice"])
 
     d_ens = per_case[[f"Dice_{c}__ensemble" for c in ("STN", "SN", "RN")]].mean(axis=1).to_numpy()
-    d_cmp = per_case[[f"Dice_{c}__{PRIMARY_COMPARATOR}" for c in ("STN", "SN", "RN")]].mean(axis=1).to_numpy()
+    d_cmp = per_case[[f"Dice_{c}__{primary_comparator}" for c in ("STN", "SN", "RN")]].mean(axis=1).to_numpy()
     deltas = d_ens - d_cmp
 
     ci_low, ci_high = EFH.paired_bootstrap_ci(deltas)
@@ -135,10 +207,10 @@ def main() -> int:
     primary = {
         "preregistration": "results/subject_clean_rerun/SUBJECT_CLEAN_HOLDOUT_PREREGISTRATION.json",
         "primary_endpoint": "case-wise paired macro foreground Dice difference",
-        "comparison": f"ensemble vs {PRIMARY_COMPARATOR}",
+        "comparison": f"ensemble vs {primary_comparator}",
         "n_paired": int(len(deltas)),
         "ensemble_macro_Dice": round(macro("ensemble"), 6),
-        "comparator_macro_Dice": round(macro(PRIMARY_COMPARATOR), 6),
+        "comparator_macro_Dice": round(macro(primary_comparator), 6),
         "mean_delta": mean_d,
         "median_delta": median_d,
         "bootstrap_ci_low": float(ci_low), "bootstrap_ci_high": float(ci_high),
@@ -153,7 +225,7 @@ def main() -> int:
         json.dumps(primary, indent=2, ensure_ascii=False), encoding="utf-8")
 
     sec_rows = []
-    for member in ["ensemble", PRIMARY_COMPARATOR] + [s for s in seeds if s != PRIMARY_COMPARATOR]:
+    for member in ["ensemble", primary_comparator] + [s for s in seeds if s != primary_comparator]:
         a = agg[member]
         sec_rows.append({"member": member, "n_cases": a["n_cases"],
                          **{k: v for k, v in a.items() if k != "n_cases"}})
@@ -165,7 +237,7 @@ def main() -> int:
                "finished_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                "internal_test_opened_utc": opened_at,
                "n_cases": len(ids), "members": seeds,
-               "primary_comparator": PRIMARY_COMPARATOR,
+               "primary_comparator": primary_comparator,
                "primary": primary, "aggregates": agg}
     (OUT / "FINAL_HOLDOUT_SUMMARY.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -174,7 +246,7 @@ def main() -> int:
     print("SUBJECT-CLEAN FROZEN HOLDOUT (n=100)")
     print("=" * 92)
     print(f"  ensemble macro Dice   : {macro('ensemble'):.4f}")
-    print(f"  comparator macro Dice : {macro(PRIMARY_COMPARATOR):.4f}  ({PRIMARY_COMPARATOR})")
+    print(f"  comparator macro Dice : {macro(primary_comparator):.4f}  ({primary_comparator})")
     print(f"  mean delta            : {mean_d:+.6f}")
     print(f"  median delta          : {median_d:+.6f}")
     print(f"  95% bootstrap CI      : [{ci_low:+.6f}, {ci_high:+.6f}]")

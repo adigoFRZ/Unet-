@@ -17,7 +17,7 @@ fails instead of silently producing a second, different set of predictions.
 RNG seeds; running them twice must give identical numbers, and the preregistered
 constants must not drift.
 
-Run with:  ./.venv/Scripts/python.exe -m pytest tests/test_frozen_holdout_evaluator.py -v
+Run with:  python -m pytest tests/test_frozen_holdout_evaluator.py -v
 """
 
 from __future__ import annotations

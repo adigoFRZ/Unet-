@@ -190,13 +190,24 @@ class BaselineConfig:
 
 
 def load_config(path: str | Path | None) -> BaselineConfig:
-    """Load a YAML config, falling back to the dataclass defaults."""
+    """Load a YAML config.
+
+    ``path=None`` means "use the dataclass defaults" and is a deliberate,
+    in-process choice made by a caller that knows it wants defaults. A path
+    that does not exist is always an error: silently substituting defaults for
+    a mistyped config file would train a different model than the user asked
+    for and report it as that experiment.
+    """
     config = BaselineConfig()
     if path is None:
         return config
     import yaml
 
-    with open(path, "r", encoding="utf-8") as handle:
+    resolved = Path(path)
+    if not resolved.is_file():
+        raise FileNotFoundError(f"config file not found: {resolved}")
+
+    with open(resolved, "r", encoding="utf-8") as handle:
         raw = yaml.safe_load(handle) or {}
     known = {f for f in asdict(config)}
     unknown = set(raw) - known
@@ -1148,7 +1159,31 @@ def final_evaluation(
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
-    config = load_config(args.config if args.config.is_file() else None)
+
+    # ---- config ------------------------------------------------------------- #
+    # Never fall back to the dataclass defaults here. A missing config used to
+    # be silently swallowed and the run proceeded on defaults, which is how a
+    # mistyped path turns into a wrong experiment filed under the right name.
+    config_path = Path(args.config)
+    if not config_path.is_file():
+        print(
+            f"\nerror: config file not found: {config_path}\n\n"
+            f"       --config was given as {str(args.config)!r}; resolved against "
+            f"{Path.cwd()}.\n"
+            f"       Pass an existing YAML file, e.g. "
+            f"--config configs/subject_clean_v1/baseline_v1.yaml\n"
+            f"       Refusing to fall back to built-in defaults.\n",
+            file=sys.stderr,
+        )
+        return 4
+
+    try:
+        config = load_config(config_path)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"\nerror: cannot use config {config_path}: {exc}\n",
+              file=sys.stderr)
+        return 4
+
     if args.batch_size is not None:
         config.batch_size = args.batch_size
     if args.max_epochs is not None:
@@ -1191,8 +1226,31 @@ def main(argv: Sequence[str] | None = None) -> int:
     # A formal run gets its own directory. Writes never land in the shared parent,
     # and an existing run directory is never overwritten silently -- previous
     # smoke/overfit/diagnostic results must survive.
+    #
+    # Convention (one rule, no exceptions): the RUN NAME is the last path
+    # component of `checkpoint_dir` / `results_dir`. The experiment configs
+    # under configs/subject_clean_v1/ already encode it, e.g.
+    #     results_dir:    results/experiments_subject_clean_v1/baseline_v1
+    #     checkpoint_dir: checkpoints/subject_clean_v1/baseline_v1
+    # so those runs are launched with the config alone. `--run-id` exists only
+    # for ad-hoc runs whose config does NOT already name them; combining the two
+    # would silently create baseline_v1/baseline_v1/, so it is refused.
     base_results_dir = Path(config.results_dir)
     base_checkpoint_dir = Path(config.checkpoint_dir)
+
+    if args.run_id and args.run_id in (base_results_dir.name, base_checkpoint_dir.name):
+        print(
+            f"\nerror: --run-id {args.run_id!r} is already part of the config path.\n\n"
+            f"       results_dir    = {config.results_dir}\n"
+            f"       checkpoint_dir = {config.checkpoint_dir}\n\n"
+            f"       Passing it again would write to "
+            f"{base_results_dir / args.run_id}.\n"
+            f"       The run name is the last path component of those two "
+            f"directories.\n"
+            f"       Launch this config WITHOUT --run-id.\n",
+            file=sys.stderr,
+        )
+        return 5
 
     if args.run_id:
         results_dir = base_results_dir / args.run_id
@@ -1210,8 +1268,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         results_dir.mkdir(parents=True, exist_ok=True)
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
         record_environment(
-            results_dir, config,
-            args.config if args.config.is_file() else None,
+            results_dir, config, config_path,
             Path(config.manifest_dir), seeding,
         )
     else:
@@ -1219,6 +1276,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         checkpoint_dir = base_checkpoint_dir
         results_dir.mkdir(parents=True, exist_ok=True)
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        # Record the provenance here too. The config-driven runs are the formal
+        # ones, so skipping this branch is exactly the case where knowing which
+        # config and which split produced a number matters most.
+        record_environment(
+            results_dir, config, config_path,
+            Path(config.manifest_dir), seeding,
+        )
 
     LOGGER.info("Run results dir   : %s", results_dir)
     LOGGER.info("Run checkpoint dir: %s", checkpoint_dir)

@@ -14,7 +14,7 @@ defect being gone while nothing else moved:
 The baseline path is checked too: G1-MC shares G1's loss, and the hard-label path
 must still be the baseline's own ``DiceCELoss`` bit for bit.
 
-Run with:  ./.venv/Scripts/python.exe -m pytest tests/test_stn_interface_soft_mc.py -v
+Run with:  python -m pytest tests/test_stn_interface_soft_mc.py -v
 """
 
 from __future__ import annotations

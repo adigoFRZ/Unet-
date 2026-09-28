@@ -54,15 +54,36 @@ checkpoints/
 *.h5
 
 # ===========================================================================
-# Case-level records -- NEVER commit.
-# The split manifests, the per-case result tables and the top-level case lists
-# all name real participant cases. Pseudonymised IDs are still participant
-# data: this repository has no redistribution right over them. The aggregate
-# numbers quoted in README.md are the only results that belong in the public
-# repo. Everything here stays on disk for local use.
+# Case-level records.
+#
+# manifests/subject_clean_v1/ is the ONE deliberate exception: the frozen
+# subject-clean split is published so a fresh clone can reproduce the
+# experiments without re-deriving the split. It contains only public
+# PDCADxFoundation case ids, the image-evidence-based subject grouping, the
+# split label and repo-relative paths. Validate it before committing with
+#     python scripts/check_public_manifests.py
+#
+# Everything else under manifests/ (the raw official split lists, the older
+# leaky experiment split) and all of results/ (per-case result tables) stays
+# local. Note the `manifests/*` form: a bare `manifests/` would exclude the
+# directory itself, and git cannot re-include a path once its parent directory
+# is excluded.
 # ===========================================================================
-manifests/
-results/
+manifests/*
+!manifests/subject_clean_v1/
+
+# results/ stays local: it holds per-case tables, prediction arrays and
+# checkpoints. The ONE published exception is the post-freeze code-amendment
+# chain, which is maintenance metadata (file names, hashes, reasons -- no
+# participant data) and has to travel with the repository so a reader can see
+# why the current code differs from the hash the freeze record pinned.
+# Same two-level form as the manifests above: the directory must be re-included
+# before a file inside it can be.
+results/*
+!results/subject_clean_holdout/
+results/subject_clean_holdout/*
+!results/subject_clean_holdout/POST_FREEZE_CODE_AMENDMENTS.json
+
 train_cases.csv
 val_cases.csv
 

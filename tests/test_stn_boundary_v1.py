@@ -13,7 +13,7 @@ The second theme is that this loss must be *purely additive*: CE and the
 foreground Dice term are Baseline v1's own computations and are compared bitwise,
 and ``boundary_weight=0`` must recover the baseline loss exactly.
 
-Run with:  ./.venv/Scripts/python.exe -m pytest tests/test_stn_boundary_v1.py -v
+Run with:  python -m pytest tests/test_stn_boundary_v1.py -v
 """
 
 from __future__ import annotations

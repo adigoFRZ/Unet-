@@ -1,0 +1,117 @@
+{
+  "record_type": "POST_FREEZE_CODE_AMENDMENTS",
+  "version": 1,
+  "purpose": "机器可读的维护性改动登记表。冻结结果文件本身永不改写；当某个被 provenance 登记的代码/配置文件在冻结之后发生改动时，在此登记一条，说明改动原因、是否影响科学语义、是否影响历史结果，以及是否授权用于未来复现。guard_subject_clean_holdout.py 读取本文件，据此区分 PASS_FROZEN_EXACT 与 PASS_AUTHORIZED_SUCCESSOR。",
+  "rules": [
+    "本文件永不被用来覆盖或删除任何冻结记录中的原始 SHA256。",
+    "original_frozen_sha256 必须与 frozen_sha256_source 指向的记录字段逐字符一致；guard 会程序化校验，凭空写入的原值不成立。",
+    "current_sha256 必须与磁盘上当前文件逐字符一致；否则该条目失效，guard 拒绝。",
+    "change_type 不在 allowed_change_types 内 → 拒绝。",
+    "scientific_semantics_changed 或 historical_result_changed 为 true → 拒绝。",
+    "authorized_for_future_reproduction 为 false → 拒绝。",
+    "没有任何 entry 与之匹配的改动 → 拒绝（未登记的新修改一律 DENY）。"
+  ],
+  "allowed_change_types": [
+    "MAINTENANCE_REPRODUCIBILITY",
+    "COSMETIC_NON_SEMANTIC"
+  ],
+  "frozen_results_are_read_only": true,
+  "amendments": [
+    {
+      "file": "scripts/evaluate_subject_clean_holdout.py",
+      "original_frozen_sha256": "00f003bf377cdc02bd77662c2e42b047154144bd6288c723e651c0badd61f8d5",
+      "current_sha256": "6711d6a5911650b2438813ac8628079eeda8267f2075de24876ca588b40f09e8",
+      "frozen_sha256_source": {
+        "record": "results/subject_clean_holdout/HOLDOUT_EVALUATION_PROVENANCE.json",
+        "pointer": "/evaluation_script/sha256"
+      },
+      "change_type": "MAINTENANCE_REPRODUCIBILITY",
+      "scientific_semantics_changed": false,
+      "historical_result_changed": false,
+      "authorized_for_future_reproduction": true,
+      "recorded_at_utc": "2026-09-28T18:20:00+00:00",
+      "reason_zh": "原 evaluator 把 comparator 的选择逻辑绑定在代码里（模块常量 PRIMARY_COMPARATOR = \"seed123\"）。当前版本改为从冻结的 preregistration / ensemble freeze record 读取 comparator，并在读取时校验它必须是已冻结成员、checkpoint 路径一致、且预注册标记 locked。对原 subject-clean frozen experiment 而言，resolve_comparator(...) 的解析结果仍是 seed123，与原常量逐字符相同，因此下游计算路径完全未变；改动只是消除了未来复现时的硬编码，并阻止在 holdout 结果出来之后再改 comparator。",
+      "reason_en": "The original evaluator bound the comparator choice into the code (module constant PRIMARY_COMPARATOR = \"seed123\"). The current version reads the comparator from the frozen pre-registration / ensemble freeze record and verifies that it is a frozen member, that its checkpoint path matches, and that the pre-registration is marked locked. For the original subject-clean frozen experiment, resolve_comparator(...) still resolves to seed123 - byte-for-byte the same value as the old constant - so the downstream computation path is unchanged. The edit only removes the hard-coding for future reproduction and blocks re-choosing a comparator after the holdout result exists.",
+      "evidence": [
+        "resolve_comparator(historical preregistration, historical freeze record) == \"seed123\"",
+        "git show HEAD:scripts/evaluate_subject_clean_holdout.py 显示历史常量为 PRIMARY_COMPARATOR = \"seed123\"",
+        "scripts/reproduce_headline_numbers.py 用当前代码重算 7 项主终点数值，全部与研究记录逐位一致"
+      ]
+    },
+    {
+      "file": "scripts/evaluate_frozen_holdout.py",
+      "original_frozen_sha256": "305ec1aea568fd5002dcf15016bf4d7781d3bfb3682a83687d35e7a7d9cb96d1",
+      "current_sha256": "0b33f0daa88a7490b1fb6f59d41b27e032b610f448b869c4d4c8b7c84d1b333f",
+      "frozen_sha256_source": {
+        "record": "results/subject_clean_holdout/HOLDOUT_EVALUATION_PROVENANCE.json",
+        "pointer": "/component_sha256/scripts~1evaluate_frozen_holdout.py"
+      },
+      "change_type": "MAINTENANCE_REPRODUCIBILITY",
+      "scientific_semantics_changed": false,
+      "historical_result_changed": false,
+      "authorized_for_future_reproduction": true,
+      "recorded_at_utc": "2026-09-28T18:20:00+00:00",
+      "reason_zh": "该文件在公开化重构（initial commit 之前）中被修改，属于冻结之后、公开之前的既有改动，本次一并登记。它是 subject-clean holdout 复用的组件之一，提供 run_blind_inference（集成推理）、evaluate_predictions（指标入口）、paired_bootstrap_ci / paired_signflip_pvalue（统计）与图像缓存。",
+      "reason_en": "This file was edited during the public-release refactor (before the initial commit). It is a pre-existing post-freeze change and is registered here. It is one of the components the subject-clean holdout reuses, providing run_blind_inference, evaluate_predictions, paired_bootstrap_ci / paired_signflip_pvalue and the frozen image cache.",
+      "evidence": [
+        "统计函数等价：scripts/reproduce_headline_numbers.py 在当前代码上重算冻结逐病例表，得到 ensemble 0.761433 / comparator 0.750928 / mean delta +0.010504 / 95% CI [+0.007519, +0.013582] / p 0.000010，与研究记录逐位一致。",
+        "指标实现未变：src/evaluation/segmentation_metrics.py 的 SHA256 与 provenance 登记值一致。",
+        "推理配方静态吻合：当前 run_blind_inference 实现为 F.softmax(logits, dim=1) → 成员概率图算术平均 → argmax(dim=class)，与冻结 preregistration 的 ensemble_recipe（p_ensemble = mean(p_i)，decision = argmax）一致；被禁的 logit 平均 / 多数投票均未出现。",
+        "冻结产物未变：predictions_subject_clean.npy、三个成员 checkpoint、internal_test manifest 的 SHA256 均与 provenance 登记值一致。"
+      ],
+      "evidence_limits_zh": "该文件在被修改之前的版本没有保存在本仓库的任何 git 提交中，因此无法用哈希证明「逐字节等价」。上述证据能证明的是：统计行为可复算一致、指标代码未变、推理配方与冻结文档一致、全部冻结产物未变。未发现任何科学语义改变的迹象，但这不是逐字节级别的证明。"
+    },
+    {
+      "file": "configs/subject_clean_v1/spatial_prior/e2_occupancy.yaml",
+      "original_frozen_sha256": "bfb7a69007cb9669f6da5d57ba8c3479c4f8943424acbfeafe2d44e2c81237bc",
+      "current_sha256": "33137d088fc96d12f54b35b538436e54270595c6fd0179dc25d9affcfea23190",
+      "frozen_sha256_source": {
+        "record": "results/subject_clean_rerun/SUBJECT_CLEAN_FREEZE_RECORD.json",
+        "pointer": "/clean_configs/configs~1subject_clean_v1~1spatial_prior~1e2_occupancy.yaml"
+      },
+      "change_type": "COSMETIC_NON_SEMANTIC",
+      "scientific_semantics_changed": false,
+      "historical_result_changed": false,
+      "authorized_for_future_reproduction": true,
+      "recorded_at_utc": "2026-09-28T18:20:00+00:00",
+      "reason_zh": "公开化重构中的注释与文本整理，科学键值未变。判定依据不是文件哈希，而是更强的证据：该 run 冻结时把「解析后的完整 config」写进了 results/experiments_subject_clean_v1/E_e2_occupancy/training_summary_run.json，把当前 config 用与训练器相同的加载路径解析后与之逐键比对，全部科学键（seed、learning_rate、weight_decay、batch_size、max_epochs、early_stopping_patience、grad_*、amp、loss_type、ce_weight、dice_weight、tversky_*、boundary_*、soft_boundary_*、augmentation_*、spatial_prior_mode、num_classes、base_channels、num_workers）零差异。",
+      "reason_en": "Comment and text tidy-up during the public-release refactor; no scientific key changed. The basis is not the file hash but stronger evidence: the frozen run recorded its fully resolved config in training_summary_run.json, and loading the current config through the same path the trainer uses reproduces it with zero differences across every scientific key.",
+      "evidence": [
+        "解析后 config 与 E_e2_occupancy 冻结 training_summary_run.json 逐键零差异",
+        "resolve_input_channels 解析结果 in_channels=6，与冻结记录一致"
+      ]
+    },
+    {
+      "file": "configs/subject_clean_v1/spatial_prior/e3_both.yaml",
+      "original_frozen_sha256": "6faf97ef90a79562fa5a6fc79ce485c94372dbdd9314a830d9c05a8f567bbbf1",
+      "current_sha256": "38cc3126170406a058d4bc1edfa37b40112b8980cbd9913dccdaf1edb860b999",
+      "frozen_sha256_source": {
+        "record": "results/subject_clean_rerun/SUBJECT_CLEAN_FREEZE_RECORD.json",
+        "pointer": "/clean_configs/configs~1subject_clean_v1~1spatial_prior~1e3_both.yaml"
+      },
+      "change_type": "COSMETIC_NON_SEMANTIC",
+      "scientific_semantics_changed": false,
+      "historical_result_changed": false,
+      "authorized_for_future_reproduction": true,
+      "recorded_at_utc": "2026-09-28T18:20:00+00:00",
+      "reason_zh": "同 e2_occupancy.yaml：公开化重构中的注释与文本整理，科学键值未变。判定依据同样来自冻结 run 记录中的解析后 config 逐键比对。",
+      "reason_en": "Same as e2_occupancy.yaml: comment and text tidy-up during the public-release refactor, no scientific key changed. Also justified by a key-by-key comparison against the resolved config the frozen run recorded.",
+      "evidence": [
+        "解析后 config 与 E_e3_both 冻结 training_summary_run.json 逐键零差异",
+        "resolve_input_channels 解析结果 in_channels=9，与冻结记录一致"
+      ]
+    }
+  ],
+  "not_amended_but_verified": {
+    "note": "以下被 provenance / freeze record 登记的哈希经本轮全仓库审计确认逐位一致，未发生任何改动。",
+    "verified_count": 45,
+    "examples": [
+      "manifests/subject_clean_v1/*.csv（含内部测试集 manifest 3ecd6652…）",
+      "checkpoints/subject_clean_v1/{baseline_v1,D2_trimodal_seed123,D2_trimodal_seed2026}/run_best.pt",
+      "results/subject_clean_holdout/predictions_subject_clean.npy",
+      "src/evaluation/segmentation_metrics.py",
+      "src/models/anisotropic_unet3d.py",
+      "src/data/crop_spec.py"
+    ]
+  }
+}

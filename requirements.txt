@@ -22,10 +22,13 @@ pytest
 # so it is installed from the PyTorch index rather than PyPI. Installing plain
 # `torch` from PyPI would silently pull a differently-linked build.
 #
-# This machine (RTX 4070 Laptop, driver 566.07 reporting CUDA 12.7) uses cu126:
+# The build used here (RTX 4070 Laptop, driver 566.07 reporting CUDA 12.7) is cu126.
+# Install it with whichever interpreter is active -- on Windows that is
+# .venv\Scripts\python.exe, on Linux/macOS it is .venv/bin/python:
 #
-#   ./.venv/Scripts/python.exe -m pip install torch \
-#       --index-url https://download.pytorch.org/whl/cu126
+#   python -m pip install torch --index-url https://download.pytorch.org/whl/cu126
+#
+# CPU-only machines can drop --index-url entirely.
 #
 # Verified working build (do not change without re-running the GPU smoke test):
 #   torch 2.14.0+cu126  |  CUDA runtime 12.6  |  cuDNN 91002  |  sm_89

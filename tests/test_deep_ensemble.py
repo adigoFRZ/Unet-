@@ -6,7 +6,7 @@ three members' probabilities, one argmax at the end -- is covered in
 decides *which cases get looked at*, and the release constraint that no
 participant case id is baked into the script.
 
-Run with:  ./.venv/Scripts/python.exe -m pytest tests/test_deep_ensemble.py -v
+Run with:  python -m pytest tests/test_deep_ensemble.py -v
 """
 
 from __future__ import annotations

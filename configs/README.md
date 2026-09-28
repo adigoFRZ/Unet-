@@ -70,12 +70,15 @@ G1 / G1-MC「STN 界面软目标」机制实验的配置。这条线**不是**�
 ## 复现某个实验
 
 ```bash
-PY=./.venv/Scripts/python.exe
+# 正式实验：run 名就是配置里 results_dir / checkpoint_dir 的最后一段，
+# 所以只给 --config，不要再传 --run-id（传了会被拒绝）
+python src/training/train_baseline.py \
+    --config configs/subject_clean_v1/modality_ablation/t1_only.yaml
 
-# 训练（run 目录已存在时会拒绝覆盖）
-$PY src/training/train_baseline.py \
-    --config configs/subject_clean_v1/modality_ablation/t1_only.yaml \
-    --run-id t1_only_seed42
+# 临时 run：改用一个配置里没出现过的名字，输出落到 <results_dir>/<run-id>/
+python src/training/train_baseline.py \
+    --config configs/subject_clean_v1/baseline_v1.yaml \
+    --run-id scratch_lr_probe
 ```
 
 输出写到配置里的 `results_dir` / `checkpoint_dir`。运行开始前会在该 run 的

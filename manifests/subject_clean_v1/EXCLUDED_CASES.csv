@@ -1,0 +1,3 @@
+﻿case_id,original_split,reason,paired_case,subject_group_id,evidence
+RJPD_338,train,same subject group as frozen-holdout case RJPD_374; must not enter training,RJPD_374,RJPD_338,"NM byte-identical, T1 r=0.999998"
+RJPD_136,challenge_test,"member of the label-less, never-used challenge_test reserved set",RJPD_157,RJPD_136,"NM byte-identical, T1 r=0.999988"

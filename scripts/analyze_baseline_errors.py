@@ -441,7 +441,14 @@ def main(argv: Sequence[str] | None = None) -> int:
               file=sys.stderr)
         return 2
 
-    config = load_config(args.config if args.config.is_file() else None)
+    # Same rule as the trainer: a missing config is an error, never a silent
+    # fall back to the dataclass defaults.
+    if not args.config.is_file():
+        print(f"\nerror: config file not found: {args.config}\n"
+              f"       Refusing to fall back to built-in defaults.\n",
+              file=sys.stderr)
+        return 4
+    config = load_config(args.config)
     resolve_config_paths(config, root)
 
     results_dir = Path(config.results_dir) / args.run_id

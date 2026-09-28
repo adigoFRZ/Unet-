@@ -13,7 +13,7 @@ The second theme is that the ablation must not disturb Baseline v1: the default
 modality selection has to return bit-identically what it returned before, and the
 network has to stay structurally identical apart from the width of its stem.
 
-Run with:  ./.venv/Scripts/python.exe -m pytest tests/test_modality_ablation.py -v
+Run with:  python -m pytest tests/test_modality_ablation.py -v
 """
 
 from __future__ import annotations
