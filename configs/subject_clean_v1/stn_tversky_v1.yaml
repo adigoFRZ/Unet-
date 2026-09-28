@@ -1,0 +1,74 @@
+# Experiment B — STN-specific Asymmetric Overlap Loss v1.
+#
+# This file is configs/baseline_v1.yaml with EXACTLY these changes:
+#   1. loss_type switches the overlap term to the hybrid STN-Tversky loss
+#   2. tversky_class / tversky_alpha / tversky_beta set that loss's parameters
+#   3. checkpoint_dir / results_dir point at the experiment directories
+#   4. pin_memory: false  (environment workaround, NOT an experimental variable)
+#
+# Every modelling and optimisation value below is identical to the frozen
+# baseline. The experiment is only interpretable if the loss is the single
+# algorithmic difference, so do not edit anything else here.
+#
+# `augmentation_enabled` is deliberately ABSENT rather than set to false: the
+# default is already false, and leaving it out keeps the config diff minimal and
+# auditable. A test asserts the diff is exactly the four items above.
+
+# ---- data --------------------------------------------------------------- #
+root: "."
+cache_dir: "cache/baseline_v1"
+manifest_dir: "manifests/subject_clean_v1"
+
+# ---- model -------------------------------------------------------------- #
+base_channels: 16
+in_channels: 3
+num_classes: 4
+
+# ---- optimisation ------------------------------------------------------- #
+seed: 42
+batch_size: 2
+learning_rate: 3.0e-4
+weight_decay: 1.0e-5
+amp: true
+max_epochs: 200
+early_stopping_patience: 40
+num_workers: 0
+# Environment workaround, NOT an experimental variable.
+# This machine has ~15.6 GB of RAM and is heavily loaded; the pinned-memory
+# allocator can then fail and PyTorch reports it as "CUDA error: out of memory"
+# even with plenty of free VRAM. pin_memory only controls whether host staging
+# buffers are page-locked, so setting it false cannot change any weight, loss or
+# metric -- the comparison against the baseline stays valid.
+pin_memory: false
+grad_accumulation_steps: 1
+grad_clip_norm: 1.0
+
+# ---- loss --------------------------------------------------------------- #
+# THE ONLY ALGORITHMIC CHANGE.
+#
+# STN gets an asymmetric Tversky index, SN and RN keep the baseline's soft Dice:
+#
+#     Tversky = (TP + eps) / (TP + alpha*FP + beta*FN + eps)
+#
+# ALPHA WEIGHTS FALSE POSITIVES.  BETA WEIGHTS FALSE NEGATIVES.
+# This is the opposite naming from Salehi et al.'s focal-Tversky paper, where
+# the symbols are conventionally swapped. Both conventions produce a plausible
+# number in [0, 1], so a mix-up would not raise -- it would just quietly move
+# the loss the wrong way. The convention is pinned by tests in
+# tests/test_stn_tversky_v1.py.
+#
+# alpha=0.60 > beta=0.40 punishes over-segmentation harder than
+# under-segmentation, which is the point: the baseline error analysis found STN
+# is systematically over-segmented (predicted/GT volume ratio 1.134,
+# precision 0.6999 < recall 0.7687), while SN (0.966) and RN (1.035) are not.
+loss_type: "stn_tversky"
+tversky_class: 1        # 1 = STN (data.crop_spec.CLASS_NAMES)
+tversky_alpha: 0.60     # weight on FALSE POSITIVES
+tversky_beta: 0.40      # weight on FALSE NEGATIVES
+
+ce_weight: 1.0          # unchanged from Baseline v1
+dice_weight: 1.0        # weight of the WHOLE hybrid overlap term (STN+SN+RN)
+
+# ---- bookkeeping -------------------------------------------------------- #
+checkpoint_dir: "checkpoints/subject_clean_v1/B_tversky"
+results_dir: "results/experiments_subject_clean_v1/B_tversky"

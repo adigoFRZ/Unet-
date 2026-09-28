@@ -1,0 +1,52 @@
+# Experiment A — Augmentation v1.
+#
+# This file is configs/baseline_v1.yaml with EXACTLY TWO changes:
+#   1. augmentation_enabled: true
+#   2. checkpoint_dir / results_dir point at the experiment directories
+#
+# Every modelling and optimisation value below is byte-identical to the frozen
+# baseline. The experiment is only interpretable if augmentation is the single
+# difference, so do not edit anything else here.
+
+# ---- data --------------------------------------------------------------- #
+root: "."
+cache_dir: "cache/baseline_v1"
+manifest_dir: "manifests/subject_clean_v1"
+
+# ---- model -------------------------------------------------------------- #
+base_channels: 16
+in_channels: 3
+num_classes: 4
+
+# ---- optimisation ------------------------------------------------------- #
+seed: 42
+batch_size: 2
+learning_rate: 3.0e-4
+weight_decay: 1.0e-5
+amp: true
+max_epochs: 200
+early_stopping_patience: 40
+num_workers: 0
+# Environment workaround, NOT an experimental variable.
+# This machine has ~15.6 GB of RAM and runs at ~93% load; with 1 GB free the
+# pinned-memory allocator fails and PyTorch reports it as "CUDA error: out of
+# memory" even though the GPU has 7.6 GB free. pin_memory only controls whether
+# host staging buffers are page-locked, so setting it false cannot change any
+# weight, loss or metric -- the comparison against the baseline stays valid.
+pin_memory: false
+grad_accumulation_steps: 1
+grad_clip_norm: 1.0
+
+# ---- loss --------------------------------------------------------------- #
+ce_weight: 1.0
+dice_weight: 1.0
+
+# ---- THE ONLY EXPERIMENTAL CHANGE --------------------------------------- #
+# Conservative affine (p=0.5) + per-modality intensity, train split only.
+# Validation is never augmented.
+augmentation_enabled: true
+augmentation_seed: 42
+
+# ---- bookkeeping -------------------------------------------------------- #
+checkpoint_dir: "checkpoints/subject_clean_v1/A_augmentation"
+results_dir: "results/experiments_subject_clean_v1/A_augmentation"

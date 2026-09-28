@@ -1,0 +1,60 @@
+# Experiment D - Modality ablation: NM.
+#
+# This file is configs/baseline_v1.yaml with EXACTLY these changes:
+#   1. modalities: the input modalities under test <- the ONLY experimental variable
+#   2. checkpoint_dir / results_dir point at the ablation directories
+#   3. pin_memory: false  (environment workaround, NOT an experimental variable)
+#
+# in_channels is deliberately NOT set here. The trainer DERIVES it from the
+# modalities list (1, 2 or 3), so the model's input width and the data's channel
+# count cannot drift apart. That is also the ONLY part of the architecture that
+# changes: AnisotropicUNet3D builds its stem from cfg.in_channels and is
+# otherwise channel-agnostic, so base_channels, depth, kernels, normalisation
+# and the head are identical across all seven runs.
+#
+# The ablation removes modalities from the INPUT TENSOR rather than zeroing the
+# unused channels: zeroing would leave a 3-channel stem in place feeding on
+# constant zeros, which is a different and weaker experiment.
+#
+# Loss, optimiser, lr, batch, crop, seed, split and checkpoint selection are the
+# frozen Baseline v1 values. No augmentation, no scheduler, no Tversky and no
+# boundary term.
+
+# ---- data --------------------------------------------------------------- #
+root: "."
+cache_dir: "cache/baseline_v1"
+manifest_dir: "manifests/subject_clean_v1"
+
+# ---- model -------------------------------------------------------------- #
+base_channels: 16          # 16 -> 32 -> 64 -> 128 -> 256
+# in_channels is NOT set here -- see the note at the top of this file.
+num_classes: 4             # 0 background, 1 STN, 2 SN, 3 RN
+
+# ---- optimisation ------------------------------------------------------- #
+seed: 42
+batch_size: 2              # provisional; confirmed by the VRAM smoke test
+learning_rate: 3.0e-4
+weight_decay: 1.0e-5
+amp: true
+max_epochs: 200
+early_stopping_patience: 40
+num_workers: 0             # Windows + small cache: keep in-process
+# Environment workaround, NOT an experimental variable. This machine has
+# ~15.6 GB of RAM and is heavily loaded; the pinned-memory allocator can then
+# fail and PyTorch reports it as "CUDA error: out of memory" even with free
+# VRAM. pin_memory only controls whether host staging buffers are page-locked,
+# so setting it false cannot change any weight, loss or metric.
+pin_memory: false
+grad_accumulation_steps: 1 # raise if batch_size has to drop to 1
+grad_clip_norm: 1.0
+
+# ---- modality ablation ---------------------------------------- #
+modalities: ["NM"]
+
+# ---- loss --------------------------------------------------------------- #
+ce_weight: 1.0
+dice_weight: 1.0
+
+# ---- bookkeeping -------------------------------------------------------- #
+checkpoint_dir: "checkpoints/subject_clean_v1/D_nm"
+results_dir: "results/experiments_subject_clean_v1/D_nm"

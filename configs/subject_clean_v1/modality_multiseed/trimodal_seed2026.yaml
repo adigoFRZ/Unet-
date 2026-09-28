@@ -1,0 +1,53 @@
+# Experiment D2 -- multi-seed robustness, T1 + QSM + NM @ seed 2026.
+#
+# This file is configs/baseline_v1.yaml with EXACTLY these changes:
+#   1. seed: 2026
+#   2. checkpoint_dir / results_dir point at the multiseed directories
+# Everything else -- modality selection, crop, model, loss, optimiser, lr, batch,
+# schedule, split -- is byte-identical to that configuration's seed-42 config, so
+# the ONLY difference between seeds within a configuration is the seed.
+#
+# The train/val split is not seed-dependent: it comes from the frozen manifest
+# files, whose sha256 is recorded in each run's environment.json. All runs in
+# Experiment D2 read the identical 160/40 split.
+#
+# pin_memory is false. This is an environment workaround, NOT an experimental
+# variable: it only controls whether host staging buffers are page-locked and
+# cannot change any weight, loss or metric. (The frozen trimodal seed-42 run
+# predates the pin_memory config key and therefore used the default True; this is
+# recorded here for transparency -- see the run report.)
+
+# ---- data --------------------------------------------------------------- #
+root: "."
+cache_dir: "cache/baseline_v1"
+manifest_dir: "manifests/subject_clean_v1"
+
+# ---- model -------------------------------------------------------------- #
+base_channels: 16          # 16 -> 32 -> 64 -> 128 -> 256
+in_channels: 3             # T1, QSM, NM  (channel order fixed in data.crop_spec)
+num_classes: 4             # 0 background, 1 STN, 2 SN, 3 RN
+
+# ---- optimisation ------------------------------------------------------- #
+seed: 2026
+batch_size: 2              # provisional; confirmed by the VRAM smoke test
+learning_rate: 3.0e-4
+weight_decay: 1.0e-5
+amp: true
+max_epochs: 200
+early_stopping_patience: 40
+num_workers: 0
+# Environment workaround, NOT an experimental variable.
+pin_memory: false             # Windows + small cache: keep in-process
+grad_accumulation_steps: 1 # raise if batch_size has to drop to 1
+grad_clip_norm: 1.0
+
+# ---- modality configuration -------------------------------- #
+modalities: ["T1", "QSM", "NM"]
+
+# ---- loss --------------------------------------------------------------- #
+ce_weight: 1.0
+dice_weight: 1.0
+
+# ---- bookkeeping -------------------------------------------------------- #
+checkpoint_dir: "checkpoints/subject_clean_v1/D2_trimodal_seed2026"
+results_dir: "results/experiments_subject_clean_v1/D2_trimodal_seed2026"

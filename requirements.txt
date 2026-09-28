@@ -1,0 +1,31 @@
+# Project dependencies.
+# Pinned versions are the ones verified in the working venv (Python 3.11.9, Windows).
+#
+# Transitive dependencies (colorama, importlib-resources, packaging,
+# python-dateutil, six, typing-extensions, tzdata) are resolved by pip and are
+# deliberately not pinned here.
+
+# ---- core data / analysis ------------------------------------------------ #
+matplotlib==3.11.2
+nibabel==5.4.2
+numpy==2.4.6
+pandas==3.0.6
+scipy==1.17.1
+tqdm==4.70.1
+
+# ---- Baseline v1 / training infrastructure ------------------------------- #
+pyyaml
+pytest
+
+# ---- PyTorch ------------------------------------------------------------- #
+# NOT listed above on purpose: the CUDA build has to match the installed driver,
+# so it is installed from the PyTorch index rather than PyPI. Installing plain
+# `torch` from PyPI would silently pull a differently-linked build.
+#
+# This machine (RTX 4070 Laptop, driver 566.07 reporting CUDA 12.7) uses cu126:
+#
+#   ./.venv/Scripts/python.exe -m pip install torch \
+#       --index-url https://download.pytorch.org/whl/cu126
+#
+# Verified working build (do not change without re-running the GPU smoke test):
+#   torch 2.14.0+cu126  |  CUDA runtime 12.6  |  cuDNN 91002  |  sm_89

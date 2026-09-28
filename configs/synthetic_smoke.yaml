@@ -1,0 +1,21 @@
+# Smoke test on the SYNTHETIC fixture written by scripts/make_synthetic_data.py.
+#
+# This is not an experiment and produces no result. It exists so that someone
+# with no access to the real dataset can still check that the code runs end to
+# end. Every key not listed here keeps the value in
+# src/training/train_baseline.py::BaselineConfig, which is the frozen baseline.
+#
+#   python scripts/make_synthetic_data.py
+#   python src/training/train_baseline.py --config configs/synthetic_smoke.yaml \
+#       --smoke-overfit 2 --max-steps 40
+#
+# All paths are relative to the project root and are re-anchored by
+# src/utils/paths.py, so this runs from any working directory.
+
+root: "tests/_synthetic_data"
+cache_dir: "cache/baseline_v1"
+manifest_dir: "manifests"
+checkpoint_dir: "checkpoints"
+results_dir: "results"
+
+num_workers: 0

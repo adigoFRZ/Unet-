@@ -1,0 +1,14 @@
+# Keep the text files this repository publishes on LF, whatever the checkout
+# platform. Without this, adding a file from Windows warns "LF will be replaced
+# by CRLF" and the committed bytes then depend on each contributor's machine,
+# which makes recorded hashes platform-specific.
+#
+# Binary data (images, weights, archives) is deliberately not listed here.
+
+*.py text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.csv text eol=lf
+*.txt text eol=lf
